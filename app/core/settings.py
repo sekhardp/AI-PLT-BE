@@ -41,7 +41,7 @@ class DatabaseSettings(BaseSettings):
         env_prefix="DB_",
         extra="ignore")
 
-    URL: str = Field(..., description="Database connection URL")
+    URL: str = Field("sqlite:///./app.db", description="Database connection URL")
     ECHO: bool = Field(False, description="Enable SQLAlchemy echo for debugging")
     
     POOL_SIZE: int = Field(5, description="Database connection pool size")
