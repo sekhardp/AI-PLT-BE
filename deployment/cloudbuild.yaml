@@ -53,7 +53,7 @@ options:
 substitutions:
   _SERVICE_NAME: 'ai-plt-be'
   _REGION: 'us-central1'
-  _REPOSITORY: 'ai-platform'
+  _REPOSITORY: 'cloud-run-source-deploy'
 
 images:
   - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_SERVICE_NAME:$COMMIT_SHA'
