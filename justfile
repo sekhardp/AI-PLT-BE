@@ -23,4 +23,4 @@ clean:
 # Equivalent: uv run pytest
 
 test:
-    uv run pytest -q
+    PYTHONPATH=. uv run pytest -q
