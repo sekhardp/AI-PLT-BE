@@ -1,0 +1,68 @@
+erDiagram
+    ROLES ||--o{ USERS : "assigned to (role_id)"
+    ROLES ||--o{ ROLE_PERMISSIONS : "has"
+    PERMISSIONS ||--o{ ROLE_PERMISSIONS : "granted through"
+    
+    USERS ||--o{ CHAT_THREADS : "owns (user_id)"
+    CHAT_THREADS ||--o{ CHAT_MESSAGES : "contains"
+    CHAT_THREADS ||--o{ FEEDBACK : "evaluated by"
+
+    ROLES {
+        int id PK "Auto-increment ID"
+        string name UK "admin, developer, finance, user, custom..."
+        string description "Role description"
+        boolean is_system "Protects default system roles"
+        datetime created_at "Creation timestamp"
+    }
+
+    PERMISSIONS {
+        int id PK "Auto-increment ID"
+        string code UK "chat:prompt, mcp:docs, mcp:jira, mcp:github, mcp:finance_db"
+        string name "Human-readable label"
+        string category "chat, mcp, admin, system"
+        datetime created_at "Creation timestamp"
+    }
+
+    ROLE_PERMISSIONS {
+        int role_id FK "References roles.id"
+        int permission_id FK "References permissions.id"
+    }
+
+    USERS {
+        int id PK "Auto-increment ID"
+        string email UK "Login email"
+        string username "Display name"
+        string hashed_password "Bcrypt hash"
+        int role_id FK "References roles.id"
+        int credits "Credit Bank balance"
+        int tokens_used "Total LLM tokens tracked"
+        boolean is_active "Active/Disabled status"
+        datetime created_at "Registration date"
+    }
+
+    CHAT_THREADS {
+        int id PK "Auto-increment ID"
+        string session_id UK "UUID session identifier"
+        string user_id "User email or identifier"
+        datetime created_at "Session started at"
+        datetime updated_at "Last updated at"
+    }
+
+    CHAT_MESSAGES {
+        int id PK "Auto-increment ID"
+        int thread_id FK "References chat_threads.id"
+        string role "user, assistant, system"
+        string content "Message text content"
+        string message_id "UUID message identifier"
+        datetime created_at "Timestamp"
+    }
+
+    FEEDBACK {
+        int id PK "Auto-increment ID"
+        string feedback_id UK "UUID feedback identifier"
+        string session_id "References chat_threads.session_id"
+        string message_id "Optional message identifier"
+        int rating "1 (thumbs up) or -1 (thumbs down)"
+        string comment "Optional text feedback"
+        datetime created_at "Timestamp"
+    }
