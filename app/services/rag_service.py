@@ -5,7 +5,7 @@ from typing import Any, List, Optional
 from google import genai
 from pypdf import PdfReader
 import docx
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import app_settings
@@ -195,11 +195,10 @@ class RAGService:
 
     async def list_documents(self, user_id: str, db: AsyncSession) -> dict[str, Any]:
         """List user documents and compute quota metrics."""
-        result = await db.scalars(
-            select(UserDocument)
-            .where(UserDocument.user_id == user_id)
-            .order_by(UserDocument.created_at.desc())
-        )
+        query = select(UserDocument).order_by(UserDocument.created_at.desc())
+        if user_id:
+            query = query.where(or_(UserDocument.user_id == user_id, UserDocument.user_id == "default_user"))
+        result = await db.scalars(query)
         docs = result.all()
 
         total_bytes = sum(d.file_size_bytes for d in docs)
