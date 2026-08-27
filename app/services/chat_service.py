@@ -27,6 +27,9 @@ class ChatService:
             select(ChatThread).where(ChatThread.session_id == session_id)
         )
         if result:
+            if user_id and not result.user_id:
+                result.user_id = user_id
+                await self.session.flush()
             return result
 
         thread = ChatThread(session_id=session_id, user_id=user_id)
@@ -52,13 +55,12 @@ class ChatService:
             self.session.add(db_message)
         await self.session.commit()
 
-    async def get_messages(self, session_id: str) -> List[ChatMessage]:
+    async def get_messages(self, session_id: str, user_id: str | None = None) -> List[ChatMessage]:
         """Fetch all messages associated with a specific session ID."""
-        result = await self.session.scalar(
-            select(ChatThread)
-            .options(selectinload(ChatThread.messages))
-            .where(ChatThread.session_id == session_id)
-        )
+        query = select(ChatThread).options(selectinload(ChatThread.messages)).where(ChatThread.session_id == session_id)
+        if user_id and user_id != "admin@example.com":
+            query = query.where(or_(ChatThread.user_id == user_id, ChatThread.user_id == None))
+        result = await self.session.scalar(query)
         if not result:
             return []
         return [
@@ -71,13 +73,12 @@ class ChatService:
             for message in result.messages
         ]
 
-    async def list_sessions(self) -> List[SessionSummary]:
-        """List summaries of all chat threads order by creation date desc."""
-        result = await self.session.scalars(
-            select(ChatThread)
-            .options(selectinload(ChatThread.messages))
-            .order_by(ChatThread.created_at.desc())
-        )
+    async def list_sessions(self, user_id: str | None = None) -> List[SessionSummary]:
+        """List summaries of chat threads filtered by user (admin sees all)."""
+        query = select(ChatThread).options(selectinload(ChatThread.messages)).order_by(ChatThread.created_at.desc())
+        if user_id and user_id != "admin@example.com":
+            query = query.where(ChatThread.user_id == user_id)
+        result = await self.session.scalars(query)
         sessions = []
         for thread in result.unique().all():
             if not thread.messages:
@@ -96,19 +97,21 @@ class ChatService:
             )
         return sessions
 
-    async def delete_session(self, session_id: str) -> None:
-        """Delete a chat session and all cascading messages."""
-        await self.session.execute(
-            delete(ChatThread).where(ChatThread.session_id == session_id)
-        )
+    async def delete_session(self, session_id: str, user_id: str | None = None) -> None:
+        """Delete a chat session ensuring user ownership (or admin)."""
+        query = delete(ChatThread).where(ChatThread.session_id == session_id)
+        if user_id and user_id != "admin@example.com":
+            query = query.where(or_(ChatThread.user_id == user_id, ChatThread.user_id == None))
+        await self.session.execute(query)
         await self.session.commit()
 
     async def add_feedback(self, feedback: FeedbackRequest) -> None:
-        """Save feedback associated with a session/message."""
+        """Save feedback associated with a session/message and user."""
         self.session.add(
             FeedbackModel(
                 feedback_id=feedback.feedback_id,
                 session_id=feedback.session_id,
+                user_id=feedback.user_id,
                 message_id=feedback.message_id,
                 rating=feedback.rating,
                 comment=feedback.comment,
@@ -116,9 +119,12 @@ class ChatService:
         )
         await self.session.commit()
 
-    async def list_feedback(self) -> List[Dict[str, Any]]:
-        """Retrieve all recorded user feedback submissions."""
-        result = await self.session.scalars(select(FeedbackModel))
+    async def list_feedback(self, user_id: str | None = None) -> List[Dict[str, Any]]:
+        """Retrieve feedback filtered by user (admin sees all)."""
+        query = select(FeedbackModel).order_by(FeedbackModel.created_at.desc())
+        if user_id and user_id != "admin@example.com":
+            query = query.where(FeedbackModel.user_id == user_id)
+        result = await self.session.scalars(query)
         return [
             {
                 "feedback_id": row.feedback_id,

@@ -51,6 +51,7 @@ class Feedback(Base):
     id = Column(Integer, primary_key=True)
     feedback_id = Column(String(64), unique=True, index=True, nullable=False)
     session_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(String(128), nullable=True, index=True)
     message_id = Column(String(64), nullable=True)
     rating = Column(Integer, nullable=False)
     comment = Column(Text, nullable=True)

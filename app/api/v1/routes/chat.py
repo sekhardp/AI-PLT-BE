@@ -84,6 +84,7 @@ async def chat_stream(
     session_id: str = "",
     agent_id: str = "",
     document_ids: str = "",
+    user_id: str = "",
     agent_service: AgentService = Depends(get_agent_service),
     chat_service: ChatService = Depends(get_chat_service),
     llm_service: LLMService = Depends(get_llm_service),
@@ -102,7 +103,7 @@ async def chat_stream(
 
         try:
             # Fetch previous conversation turns from history for context continuity
-            past_messages = await chat_service.get_messages(sid)
+            past_messages = await chat_service.get_messages(sid, user_id=user_id if user_id else None)
             chat_history = [
                 {"role": m.role, "content": m.content}
                 for m in past_messages[-6:]
@@ -188,7 +189,7 @@ async def chat_stream(
             message_id=str(uuid.uuid4()),
         )
         try:
-            await chat_service.add_messages(sid, [user_msg, assistant_msg])
+            await chat_service.add_messages(sid, [user_msg, assistant_msg], user_id=user_id if user_id else None)
         except Exception as db_err:
             logger.error("Failed to persist chat messages to database: %s", db_err)
 

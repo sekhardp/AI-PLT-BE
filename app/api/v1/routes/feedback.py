@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends
 
 from app.api.v1.schemas.feedback import FeedbackRequest, FeedbackResponse
@@ -18,8 +19,9 @@ async def submit_feedback(
 
 @router.get("")
 async def list_feedback(
+    user_id: Optional[str] = None,
     chat_service: ChatService = Depends(get_chat_service)
 ):
-    """Retrieve all submitted feedback."""
-    feedback = await chat_service.list_feedback()
+    """Retrieve submitted feedback filtered by user (admin sees all)."""
+    feedback = await chat_service.list_feedback(user_id=user_id)
     return {"feedback": feedback}

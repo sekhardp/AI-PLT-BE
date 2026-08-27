@@ -196,8 +196,8 @@ class RAGService:
     async def list_documents(self, user_id: str, db: AsyncSession) -> dict[str, Any]:
         """List user documents and compute quota metrics."""
         query = select(UserDocument).order_by(UserDocument.created_at.desc())
-        if user_id:
-            query = query.where(or_(UserDocument.user_id == user_id, UserDocument.user_id == "default_user"))
+        if user_id and user_id != "admin@example.com":
+            query = query.where(UserDocument.user_id == user_id)
         result = await db.scalars(query)
         docs = result.all()
 
@@ -230,8 +230,8 @@ class RAGService:
         """Delete a document and cascade its vectorized chunks."""
         doc_uuid = uuid.UUID(doc_id)
         query = select(UserDocument).where(UserDocument.id == doc_uuid)
-        if user_id:
-            query = query.where(or_(UserDocument.user_id == user_id, UserDocument.user_id == "default_user"))
+        if user_id and user_id != "admin@example.com":
+            query = query.where(UserDocument.user_id == user_id)
         doc = await db.scalar(query)
         if not doc:
             return False
