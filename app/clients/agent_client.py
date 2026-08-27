@@ -53,14 +53,21 @@ class AgentClient:
                 logger.error("Failed to fetch agent '%s': %s", agent_id, e)
                 raise AgentClientError(f"Failed to connect to agent service: {e}") from e
 
-    async def execute_non_streaming(self, agent_id: str | None, prompt: str) -> str:
+    async def execute_non_streaming(
+        self,
+        agent_id: str | None,
+        prompt: str,
+        chat_history: list[dict[str, str]] | None = None,
+    ) -> str:
         """Execute a non-streaming prompt against the agent service."""
         url = f"{self.base_url}/execute"
         payload = {
             "prompt": prompt,
             "agent_id": agent_id,
-            "stream": False
+            "stream": False,
         }
+        if chat_history:
+            payload["chat_history"] = chat_history
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 response = await client.post(url, json=payload)
@@ -71,14 +78,21 @@ class AgentClient:
                 logger.error("Agent execution failed (non-streaming): %s", e)
                 raise AgentClientError(f"Error from agent service: {e}") from e
 
-    async def execute_streaming(self, agent_id: str | None, prompt: str) -> AsyncGenerator[str, None]:
+    async def execute_streaming(
+        self,
+        agent_id: str | None,
+        prompt: str,
+        chat_history: list[dict[str, str]] | None = None,
+    ) -> AsyncGenerator[str, None]:
         """Execute a streaming prompt against the agent service, yielding SSE lines."""
         url = f"{self.base_url}/execute"
         payload = {
             "prompt": prompt,
             "agent_id": agent_id,
-            "stream": True
+            "stream": True,
         }
+        if chat_history:
+            payload["chat_history"] = chat_history
         try:
             # We don't use standard client timeout here because LLM streams can run for a long time
             async with httpx.AsyncClient(timeout=None) as client:

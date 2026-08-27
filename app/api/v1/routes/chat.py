@@ -32,8 +32,16 @@ async def chat(
     reply = ""
 
     try:
-        # Try executing against downstream agent service
-        reply = await agent_service.execute_agent_non_streaming(req.agent_id, req.prompt)
+        # Fetch previous conversation turns from history
+        past_messages = await chat_service.get_messages(session_id)
+        chat_history = [
+            {"role": m.role, "content": m.content}
+            for m in past_messages[-6:]
+        ]
+        # Try executing against downstream agent service with chat history
+        reply = await agent_service.execute_agent_non_streaming(
+            req.agent_id, req.prompt, chat_history=chat_history
+        )
     except AgentClientError as e:
         logger.warning(
             "Downstream agent execution failed (session_id=%s). Falling back to LLM service. Error: %s",
@@ -88,8 +96,17 @@ async def chat_stream(
         model_name = None
 
         try:
-            # 1. Attempt streaming from downstream agent service
-            async for line in agent_service.execute_agent_streaming(agent_id if agent_id else None, prompt):
+            # Fetch previous conversation turns from history for context continuity
+            past_messages = await chat_service.get_messages(sid)
+            chat_history = [
+                {"role": m.role, "content": m.content}
+                for m in past_messages[-6:]
+            ]
+
+            # 1. Attempt streaming from downstream agent service with chat history
+            async for line in agent_service.execute_agent_streaming(
+                agent_id if agent_id else None, prompt, chat_history=chat_history
+            ):
                 if line.startswith("data: "):
                     data_str = line[len("data: ") :].strip()
                     try:

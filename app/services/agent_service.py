@@ -21,13 +21,23 @@ class AgentService:
         """Fetch details of a specific agent."""
         return await self.client.get_agent(agent_id)
 
-    async def execute_agent_non_streaming(self, agent_id: str | None, prompt: str) -> str:
+    async def execute_agent_non_streaming(
+        self,
+        agent_id: str | None,
+        prompt: str,
+        chat_history: list[dict[str, str]] | None = None,
+    ) -> str:
         """Run non-streaming execution against downstream agent."""
-        return await self.client.execute_non_streaming(agent_id, prompt)
+        return await self.client.execute_non_streaming(agent_id, prompt, chat_history=chat_history)
 
-    async def execute_agent_streaming(self, agent_id: str | None, prompt: str) -> AsyncGenerator[str, None]:
+    async def execute_agent_streaming(
+        self,
+        agent_id: str | None,
+        prompt: str,
+        chat_history: list[dict[str, str]] | None = None,
+    ) -> AsyncGenerator[str, None]:
         """Run streaming execution against downstream agent."""
-        async for chunk in self.client.execute_streaming(agent_id, prompt):
+        async for chunk in self.client.execute_streaming(agent_id, prompt, chat_history=chat_history):
             yield chunk
 
 
