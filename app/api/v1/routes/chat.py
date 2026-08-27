@@ -1,3 +1,6 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.db.rag_session import get_rag_db
+from app.services.rag_service import rag_service
 import json
 import logging
 import uuid
@@ -80,9 +83,11 @@ async def chat_stream(
     prompt: str,
     session_id: str = "",
     agent_id: str = "",
+    document_ids: str = "",
     agent_service: AgentService = Depends(get_agent_service),
     chat_service: ChatService = Depends(get_chat_service),
     llm_service: LLMService = Depends(get_llm_service),
+    rag_db: AsyncSession = Depends(get_rag_db),
 ):
     """
     Stream chat response tokens using Server-Sent Events (SSE).
@@ -103,9 +108,32 @@ async def chat_stream(
                 for m in past_messages[-6:]
             ]
 
+            # Retrieve semantic context from attached documents if document_ids provided
+            effective_prompt = prompt
+            doc_id_list = [d.strip() for d in document_ids.split(",") if d.strip()]
+            if doc_id_list:
+                try:
+                    matched = await rag_service.search_documents(prompt, doc_id_list, top_k=4, db=rag_db)
+                    if matched:
+                        passages = [
+                            f"[Document: {c["filename"]} (chunk {c["chunk_index"]})]:\n{c["chunk_text"]}"
+                            for c in matched
+                        ]
+                        context_block = "\n\n".join(passages)
+                        effective_prompt = (
+                            f"Relevant context from attached documents:\n"
+                            f"==============================\n"
+                            f"{context_block}\n"
+                            f"==============================\n\n"
+                            f"User Question: {prompt}\n\n"
+                            f"Answer the user question using the context above when relevant."
+                        )
+                except Exception as rag_err:
+                    logger.warning("RAG context lookup failed: %s", rag_err)
+
             # 1. Attempt streaming from downstream agent service with chat history
             async for line in agent_service.execute_agent_streaming(
-                agent_id if agent_id else None, prompt, chat_history=chat_history
+                agent_id if agent_id else None, effective_prompt, chat_history=chat_history
             ):
                 if line.startswith("data: "):
                     data_str = line[len("data: ") :].strip()
