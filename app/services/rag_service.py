@@ -229,12 +229,14 @@ class RAGService:
     async def delete_document(self, doc_id: str, user_id: str, db: AsyncSession) -> bool:
         """Delete a document and cascade its vectorized chunks."""
         doc_uuid = uuid.UUID(doc_id)
-        doc = await db.scalar(
-            select(UserDocument).where(UserDocument.id == doc_uuid, UserDocument.user_id == user_id)
-        )
+        query = select(UserDocument).where(UserDocument.id == doc_uuid)
+        if user_id:
+            query = query.where(or_(UserDocument.user_id == user_id, UserDocument.user_id == "default_user"))
+        doc = await db.scalar(query)
         if not doc:
             return False
 
+        await db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == doc_uuid))
         await db.delete(doc)
         await db.commit()
         return True
