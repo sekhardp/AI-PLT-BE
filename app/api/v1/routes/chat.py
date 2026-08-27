@@ -36,7 +36,7 @@ async def chat(
 
     try:
         # Fetch previous conversation turns from history
-        past_messages = await chat_service.get_messages(session_id)
+        past_messages = await chat_service.get_messages(session_id, user_id=req.user_id)
         chat_history = [
             {"role": m.role, "content": m.content}
             for m in past_messages[-6:]
@@ -73,7 +73,7 @@ async def chat(
         message_id=str(uuid.uuid4()),
     )
 
-    await chat_service.add_messages(session_id, [user_msg, assistant_msg])
+    await chat_service.add_messages(session_id, [user_msg, assistant_msg], user_id=req.user_id)
 
     return ChatResponse(session_id=session_id, message=assistant_msg)
 
@@ -161,6 +161,9 @@ async def chat_stream(
                 sid,
                 e,
             )
+            use_fallback = True
+        except Exception as unexp_err:
+            logger.error("Unexpected error in agent stream execution: %s", unexp_err, exc_info=True)
             use_fallback = True
 
         if use_fallback:

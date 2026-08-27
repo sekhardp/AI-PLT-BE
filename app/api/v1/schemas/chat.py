@@ -12,6 +12,7 @@ class ChatRequest(BaseModel):
     prompt: str
     session_id: str | None = None
     agent_id: str | None = None
+    user_id: str | None = None
 
 
 class ChatResponse(BaseModel):

@@ -68,6 +68,39 @@ class UserService:
         norm_email = email.lower().strip()
         return await db.scalar(select(User).where(User.email == norm_email))
 
+    async def get_user_by_id(self, user_id: int, db: AsyncSession) -> Optional[User]:
+        """Fetch user by primary key ID."""
+        return await db.scalar(select(User).where(User.id == user_id))
+
+    async def resolve_user(self, identifier: Any, db: AsyncSession) -> Optional[User]:
+        """
+        Resolve a User object given either integer ID, string ID, or email address.
+        """
+        if not identifier or not db:
+            return None
+        ident_str = str(identifier).strip()
+        if not ident_str:
+            return None
+
+        if ident_str.isdigit():
+            user = await self.get_user_by_id(int(ident_str), db)
+            if user:
+                return user
+
+        return await self.get_user_by_email(ident_str, db)
+
+    async def is_admin_user(self, identifier: Any, db: AsyncSession) -> bool:
+        """Check if an identifier (ID or email) corresponds to an admin user."""
+        if not identifier or not db:
+            return False
+        ident_str = str(identifier).strip().lower()
+        if "admin" in ident_str:
+            return True
+        user = await self.resolve_user(identifier, db)
+        if user and user.role == "admin":
+            return True
+        return False
+
     async def update_credits(self, email: str, new_credits: int, db: AsyncSession) -> User:
         """Admin top-up or manual credit update."""
         user = await self.get_user_by_email(email, db)

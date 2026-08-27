@@ -85,3 +85,27 @@ async def test_upload_endpoint(client: AsyncClient):
     assert data["filename"] == "test.txt"
     assert data["size_bytes"] == len(b"Hello, this is a test file content.")
     assert data["content_type"] == "text/plain"
+
+
+@pytest.mark.asyncio
+async def test_non_admin_chat_stream_and_history(client: AsyncClient):
+    """Verify that non-admin users can stream responses without crash and fetch history."""
+    # 1. Non-admin stream chat (previously crashed due to missing or_ and hardcoded email)
+    resp = await client.get("/api/v1/chat/stream?prompt=Hello&user_id=sarath@example.com&session_id=sess-nonadmin-1")
+    assert resp.status_code == 200
+    text = resp.text
+    assert "data: " in text
+    assert "sess-nonadmin-1" in text
+
+    # 2. Fetch history for non-admin session
+    hist_resp = await client.get("/api/v1/history/sess-nonadmin-1?user_id=sarath@example.com")
+    assert hist_resp.status_code == 200
+    messages = hist_resp.json()["messages"]
+    assert len(messages) >= 2
+    assert messages[0]["content"] == "Hello"
+
+    # 3. List sessions for non-admin user
+    list_resp = await client.get("/api/v1/history?user_id=sarath@example.com")
+    assert list_resp.status_code == 200
+    sessions = list_resp.json()["sessions"]
+    assert any(s["session_id"] == "sess-nonadmin-1" for s in sessions)
