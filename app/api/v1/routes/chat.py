@@ -101,8 +101,8 @@ async def chat_stream(
                             routed_to = data_json["routed_to"]
                         if data_json.get("model"):
                             model_name = data_json["model"]
-                        if data_json.get("type") == "routing_init":
-                            yield f"data: {json.dumps({'type': 'routing_init', 'session_id': sid, 'routed_to': data_json.get('routed_to'), 'model': data_json.get('model'), 'complexity_score': data_json.get('complexity_score')})}\n\n"
+                        if data_json.get("type") in ("routing_init", "routing_decision"):
+                            yield f"data: {json.dumps({'type': data_json.get('type'), 'session_id': sid, 'stage': data_json.get('stage'), 'routed_to': data_json.get('routed_to'), 'model': data_json.get('model'), 'complexity_score': data_json.get('complexity_score'), 'fallback_triggered': data_json.get('fallback_triggered', False)})}\n\n"
                             continue
                         token = data_json.get("token", "")
                         full_response += token
