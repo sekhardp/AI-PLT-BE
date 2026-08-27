@@ -43,6 +43,10 @@ steps:
       - '--allow-unauthenticated'
       - '--port'
       - '8000'
+      - '--add-cloudsql-instances'
+      - 'beam-suntory-gemini-llm-poc:us-central1:ai-plt-db'
+      - '--update-env-vars'
+      - 'DB_URL=postgresql+psycopg://postgres:W0uld_Y0u_C0nn3ct_M3@/postgres?host=/cloudsql/beam-suntory-gemini-llm-poc:us-central1:ai-plt-db,RAG_DB_URL=postgresql+psycopg://postgres:W0uld_Y0u_C0nn3ct_M3@/postgres?host=/cloudsql/beam-suntory-gemini-llm-poc:us-central1:ai-plt-db'
     id: 'Deploy to Cloud Run'
 
 # Options for build optimization
