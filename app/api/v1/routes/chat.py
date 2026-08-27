@@ -84,6 +84,8 @@ async def chat_stream(
     async def event_generator() -> AsyncGenerator[str, None]:
         full_response = ""
         use_fallback = False
+        routed_to = None
+        model_name = None
 
         try:
             # 1. Attempt streaming from downstream agent service
@@ -93,10 +95,18 @@ async def chat_stream(
                     try:
                         data_json = json.loads(data_str)
                         if data_json.get("done"):
+                            yield f"data: {json.dumps({'done': True, 'session_id': sid, 'routed_to': data_json.get('routed_to'), 'model': data_json.get('model')})}\n\n"
                             break
+                        if data_json.get("routed_to"):
+                            routed_to = data_json["routed_to"]
+                        if data_json.get("model"):
+                            model_name = data_json["model"]
+                        if data_json.get("type") == "routing_init":
+                            yield f"data: {json.dumps({'type': 'routing_init', 'session_id': sid, 'routed_to': data_json.get('routed_to'), 'model': data_json.get('model'), 'complexity_score': data_json.get('complexity_score')})}\n\n"
+                            continue
                         token = data_json.get("token", "")
                         full_response += token
-                        yield f"data: {json.dumps({'token': token, 'session_id': sid})}\n\n"
+                        yield f"data: {json.dumps({'token': token, 'session_id': sid, 'routed_to': data_json.get('routed_to'), 'model': data_json.get('model')})}\n\n"
                     except json.JSONDecodeError:
                         pass
         except AgentClientError as e:
@@ -137,7 +147,7 @@ async def chat_stream(
         except Exception as db_err:
             logger.error("Failed to persist chat messages to database: %s", db_err)
 
-        yield f"data: {json.dumps({'done': True, 'session_id': sid})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'session_id': sid, 'routed_to': routed_to, 'model': model_name})}\n\n"
 
     return StreamingResponse(
         event_generator(),

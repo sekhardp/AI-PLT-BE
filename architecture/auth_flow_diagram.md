@@ -16,7 +16,7 @@ sequenceDiagram
     Frontend->>Backend: POST /api/v1/auth/login
     Backend->>DB: Query User & verify bcrypt password
     DB-->>Backend: User Record (role: developer, credits: 20)
-    Backend->>Backend: Generate JWT with exp (24h) & claims
+    Backend->>Backend: Generate JWT with exp (1h) & claims
     Backend-->>Frontend: 200 OK { access_token, user }
     Note over Frontend: Stores access_token in memory / localStorage
 
