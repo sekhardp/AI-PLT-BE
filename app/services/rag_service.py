@@ -1,9 +1,12 @@
+import asyncio
 import io
 import logging
+import re
 import uuid
 from typing import Any, List, Optional
 from google import genai
 from pypdf import PdfReader
+from rank_bm25 import BM25Okapi
 import docx
 from sqlalchemy import delete, func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,11 +32,21 @@ class RAGService:
         self.gcp_project = "beam-suntory-gemini-llm-poc"
         self.gcp_location = "us-central1"
         self.embedding_model = "text-embedding-005"
-        self._genai_client = genai.Client(
-            vertexai=True,
-            project=self.gcp_project,
-            location=self.gcp_location,
-        )
+        self._genai_client = None
+
+    @property
+    def genai_client(self):
+        if self._genai_client is None:
+            try:
+                self._genai_client = genai.Client(
+                    vertexai=True,
+                    project=self.gcp_project,
+                    location=self.gcp_location,
+                )
+            except Exception as e:
+                logger.warning("Failed to initialize Google GenAI Client: %s", e)
+                return None
+        return self._genai_client
 
     async def _resolve_user_identifiers(self, user_id: str | None, db: AsyncSession) -> tuple[bool, List[str]]:
         """Resolve admin status and list of user identifiers for querying."""
@@ -100,58 +113,121 @@ class RAGService:
         except UnicodeDecodeError:
             return content.decode("latin-1", errors="replace")
 
-    def chunk_text(self, text: str, chunk_size: int = 800, overlap: int = 100) -> List[str]:
-        """Split raw text into overlapping semantic passages."""
+    def chunk_text(
+        self,
+        text: str,
+        chunk_size: int = 800,
+        overlap: int = 100,
+        separators: Optional[List[str]] = None,
+    ) -> List[str]:
+        """
+        Split raw text into overlapping semantic passages using a recursive character splitter.
+        Splits hierarchically by paragraphs, lines, sentences, and words to preserve context.
+        """
         clean_text = text.strip()
         if not clean_text:
             return []
 
-        chunks = []
-        start = 0
-        text_len = len(clean_text)
+        if len(clean_text) <= chunk_size:
+            return [clean_text]
 
-        while start < text_len:
-            end = start + chunk_size
-            if end >= text_len:
-                chunk = clean_text[start:]
-                if chunk.strip():
-                    chunks.append(chunk.strip())
-                break
+        if separators is None:
+            separators = ["\n\n", "\n", ". ", "? ", "! ", " ", ""]
 
-            # Find convenient split point near whitespace or newline
-            split_at = clean_text.rfind("\n\n", start, end)
-            if split_at == -1:
-                split_at = clean_text.rfind("\n", start, end)
-            if split_at == -1:
-                split_at = clean_text.rfind(" ", start, end)
-            if split_at == -1 or split_at <= start:
-                split_at = end
+        def _split_text(text_to_split: str, seps: List[str]) -> List[str]:
+            final_chunks: List[str] = []
+            if not seps or not text_to_split:
+                return [text_to_split] if text_to_split else []
 
-            chunk = clean_text[start:split_at].strip()
-            if chunk:
-                chunks.append(chunk)
-            start = split_at - overlap if split_at - overlap > start else split_at
+            sep = seps[0]
+            new_seps = seps[1:]
 
-        return chunks
+            if sep == "":
+                splits = list(text_to_split)
+                separator_used = ""
+            else:
+                splits = text_to_split.split(sep)
+                separator_used = sep
+
+            good_splits: List[str] = []
+            for s in splits:
+                if not s and sep != "":
+                    continue
+                if len(s) < chunk_size:
+                    good_splits.append(s)
+                else:
+                    if good_splits:
+                        merged = _merge_splits(good_splits, separator_used)
+                        final_chunks.extend(merged)
+                        good_splits = []
+                    if new_seps:
+                        sub_chunks = _split_text(s, new_seps)
+                        final_chunks.extend(sub_chunks)
+                    else:
+                        final_chunks.append(s)
+
+            if good_splits:
+                merged = _merge_splits(good_splits, separator_used)
+                final_chunks.extend(merged)
+
+            return [c.strip() for c in final_chunks if c.strip()]
+
+        def _merge_splits(splits: List[str], separator: str) -> List[str]:
+            docs: List[str] = []
+            current_doc: List[str] = []
+            total_len = 0
+
+            for d in splits:
+                d_len = len(d) + (len(separator) if current_doc else 0)
+                if total_len + d_len > chunk_size and current_doc:
+                    doc_text = separator.join(current_doc).strip()
+                    if doc_text:
+                        docs.append(doc_text)
+                    while current_doc and (total_len > overlap or total_len + d_len > chunk_size):
+                        popped = current_doc.pop(0)
+                        total_len -= len(popped) + (len(separator) if current_doc else 0)
+
+                current_doc.append(d)
+                total_len += d_len
+
+            if current_doc:
+                doc_text = separator.join(current_doc).strip()
+                if doc_text:
+                    docs.append(doc_text)
+
+            return docs
+
+        return _split_text(clean_text, separators)
 
     async def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generate 768-dim embeddings in batches using Vertex AI text-embedding-005."""
         if not texts:
             return []
 
+        client = self.genai_client
+        if not client:
+            return []
+
         embeddings = []
         batch_size = 10
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
-            response = await self._genai_client.aio.models.embed_content(
-                model=self.embedding_model,
-                contents=batch,
-            )
-            if hasattr(response, "embeddings"):
-                for emb in response.embeddings:
-                    embeddings.append(emb.values)
-            elif hasattr(response, "embedding"):
-                embeddings.append(response.embedding.values)
+            try:
+                response = await asyncio.wait_for(
+                    client.aio.models.embed_content(
+                        model=self.embedding_model,
+                        contents=batch,
+                    ),
+                    timeout=5.0,
+                )
+                if hasattr(response, "embeddings"):
+                    for emb in response.embeddings:
+                        embeddings.append(emb.values)
+                elif hasattr(response, "embedding"):
+                    embeddings.append(response.embedding.values)
+            except Exception as e:
+                logger.warning("Embedding generation timed out or failed: %s", e)
+                break
 
         return embeddings
 
@@ -268,53 +344,155 @@ class RAGService:
         await db.commit()
         return True
 
+    @staticmethod
+    def _tokenize_text(text: str) -> List[str]:
+        """Tokenize text into lowercase alphanumeric tokens for BM25."""
+        return [w.lower() for w in re.findall(r"\w+", text) if w.strip()]
+
     async def search_documents(
         self,
         query: str,
         document_ids: List[str],
         top_k: int = 5,
         db: Optional[AsyncSession] = None,
+        mode: str = "hybrid",
     ) -> List[dict[str, Any]]:
-        """Perform cosine similarity search against selected document IDs."""
-        if not document_ids or not query.strip() or not db:
+        """
+        Execute Hybrid Search (Dense Vector + BM25 with Reciprocal Rank Fusion),
+        or pure vector / BM25 search across specified document IDs.
+        """
+        clean_query = query.strip()
+        if not document_ids or not clean_query or not db:
             return []
-
-        # 1. Embed query
-        query_embeddings = await self.generate_embeddings([query])
-        if not query_embeddings:
-            return []
-        query_vector = query_embeddings[0]
 
         uuids = [uuid.UUID(d) for d in document_ids]
+        vector_candidates: List[dict[str, Any]] = []
+        bm25_candidates: List[dict[str, Any]] = []
 
-        # 2. Vector search ordered by cosine distance (<=>)
-        stmt = (
-            select(
-                DocumentChunk.chunk_text,
-                DocumentChunk.chunk_index,
-                DocumentChunk.document_id,
-                UserDocument.filename,
-                (1.0 - DocumentChunk.embedding.cosine_distance(query_vector)).label("similarity"),
-            )
-            .join(UserDocument, DocumentChunk.document_id == UserDocument.id)
-            .where(DocumentChunk.document_id.in_(uuids))
-            .order_by(DocumentChunk.embedding.cosine_distance(query_vector))
-            .limit(top_k)
-        )
+        # 1. Dense Vector Retrieval (pgvector)
+        if mode in ("hybrid", "vector"):
+            try:
+                query_embeddings = await self.generate_embeddings([clean_query])
+                if query_embeddings:
+                    query_vector = query_embeddings[0]
+                    vector_limit = max(top_k * 3, 15)
+                    stmt = (
+                        select(
+                            DocumentChunk.id,
+                            DocumentChunk.chunk_text,
+                            DocumentChunk.chunk_index,
+                            DocumentChunk.document_id,
+                            UserDocument.filename,
+                            (1.0 - DocumentChunk.embedding.cosine_distance(query_vector)).label("similarity"),
+                        )
+                        .join(UserDocument, DocumentChunk.document_id == UserDocument.id)
+                        .where(DocumentChunk.document_id.in_(uuids))
+                        .order_by(DocumentChunk.embedding.cosine_distance(query_vector))
+                        .limit(vector_limit)
+                    )
+                    v_res = await db.execute(stmt)
+                    for row in v_res.all():
+                        vector_candidates.append(
+                            {
+                                "chunk_id": str(row[0]),
+                                "chunk_text": row[1],
+                                "chunk_index": row[2],
+                                "document_id": str(row[3]),
+                                "filename": row[4],
+                                "similarity": round(float(row[5]), 4),
+                            }
+                        )
+            except Exception as e:
+                logger.warning("Dense vector search failed: %s", e)
 
-        result = await db.execute(stmt)
-        rows = result.all()
+        # 2. BM25 Keyword Retrieval (rank_bm25)
+        if mode in ("hybrid", "bm25"):
+            try:
+                all_chunks_stmt = (
+                    select(
+                        DocumentChunk.id,
+                        DocumentChunk.chunk_text,
+                        DocumentChunk.chunk_index,
+                        DocumentChunk.document_id,
+                        UserDocument.filename,
+                    )
+                    .join(UserDocument, DocumentChunk.document_id == UserDocument.id)
+                    .where(DocumentChunk.document_id.in_(uuids))
+                )
+                c_res = await db.execute(all_chunks_stmt)
+                all_chunks = c_res.all()
 
-        return [
-            {
-                "chunk_text": row[0],
-                "chunk_index": row[1],
-                "document_id": str(row[2]),
-                "filename": row[3],
-                "similarity": round(float(row[4]), 4),
-            }
-            for row in rows
-        ]
+                if all_chunks:
+                    tokenized_corpus = [
+                        self._tokenize_text(row[1]) for row in all_chunks
+                    ]
+                    query_tokens = self._tokenize_text(clean_query)
+
+                    if query_tokens:
+                        bm25 = BM25Okapi(tokenized_corpus)
+                        scores = bm25.get_scores(query_tokens)
+
+                        scored_chunks = []
+                        for idx, score in enumerate(scores):
+                            if score > 0:
+                                scored_chunks.append((score, all_chunks[idx]))
+
+                        scored_chunks.sort(key=lambda x: x[0], reverse=True)
+                        bm25_limit = max(top_k * 3, 15)
+                        for score, row in scored_chunks[:bm25_limit]:
+                            bm25_candidates.append(
+                                {
+                                    "chunk_id": str(row[0]),
+                                    "chunk_text": row[1],
+                                    "chunk_index": row[2],
+                                    "document_id": str(row[3]),
+                                    "filename": row[4],
+                                    "bm25_score": round(float(score), 4),
+                                    "similarity": round(float(score), 4),
+                                }
+                            )
+            except Exception as e:
+                logger.warning("BM25 search failed: %s", e)
+
+        # 3. Direct mode returns
+        if mode == "vector":
+            return vector_candidates[:top_k]
+        if mode == "bm25":
+            return bm25_candidates[:top_k]
+
+        # 4. Reciprocal Rank Fusion (RRF) for Hybrid Mode
+        if not vector_candidates:
+            return bm25_candidates[:top_k]
+        if not bm25_candidates:
+            return vector_candidates[:top_k]
+
+        k_rrf = 60
+        rrf_scores: dict[str, float] = {}
+        chunk_map: dict[str, dict[str, Any]] = {}
+
+        for rank, item in enumerate(vector_candidates):
+            cid = item["chunk_id"]
+            chunk_map[cid] = item
+            rrf_scores[cid] = rrf_scores.get(cid, 0.0) + (1.0 / (k_rrf + rank + 1))
+
+        for rank, item in enumerate(bm25_candidates):
+            cid = item["chunk_id"]
+            if cid in chunk_map:
+                chunk_map[cid]["bm25_score"] = item.get("bm25_score")
+            else:
+                chunk_map[cid] = item
+            rrf_scores[cid] = rrf_scores.get(cid, 0.0) + (1.0 / (k_rrf + rank + 1))
+
+        sorted_cids = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
+        final_results = []
+        for cid, score in sorted_cids[:top_k]:
+            item = dict(chunk_map[cid])
+            item["rrf_score"] = round(score, 6)
+            if "similarity" not in item or item.get("similarity") is None:
+                item["similarity"] = round(score * 10, 4)
+            final_results.append(item)
+
+        return final_results
 
 
 rag_service = RAGService()

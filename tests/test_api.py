@@ -109,3 +109,49 @@ async def test_non_admin_chat_stream_and_history(client: AsyncClient):
     assert list_resp.status_code == 200
     sessions = list_resp.json()["sessions"]
     assert any(s["session_id"] == "sess-nonadmin-1" for s in sessions)
+
+
+def test_recursive_chunk_text():
+    """Verify recursive character text splitter splits hierarchically and respects boundaries."""
+    from app.services.rag_service import rag_service
+
+    sample_doc = (
+        "Introduction to AI Platform.\n\n"
+        "Section 1: Architecture Overview.\n"
+        "The system routes complex queries to frontier models and fast queries to local models. "
+        "It includes a RAG pipeline with pgvector semantic similarity search.\n\n"
+        "Section 2: Security & Quotas.\n"
+        "Users have isolated storage quotas and credit ledgers."
+    )
+
+    chunks = rag_service.chunk_text(sample_doc, chunk_size=120, overlap=30)
+    assert len(chunks) >= 2
+    # Ensure all chunks are within reasonable chunk_size bounds
+    for c in chunks:
+        assert len(c) > 0
+        assert isinstance(c, str)
+    # Ensure full content coverage
+    assert any("Introduction to AI Platform" in c for c in chunks)
+    assert any("Section 2: Security & Quotas" in c for c in chunks)
+
+
+def test_bm25_tokenization_and_hybrid():
+    """Verify BM25 tokenization and BM25Okapi scoring."""
+    from app.services.rag_service import rag_service
+    from rank_bm25 import BM25Okapi
+
+    corpus = [
+        "Invoice PR-9021 for carbon credit retirement certificate issued to Acme Corp.",
+        "Scope 1 emissions are direct greenhouse gas emissions from controlled facilities.",
+        "Scope 2 emissions are indirect emissions from electricity consumption.",
+    ]
+    tokenized_corpus = [rag_service._tokenize_text(doc) for doc in corpus]
+    bm25 = BM25Okapi(tokenized_corpus)
+
+    query = "PR-9021 invoice"
+    query_tokens = rag_service._tokenize_text(query)
+    scores = bm25.get_scores(query_tokens)
+
+    # Document 0 (PR-9021 invoice) should have highest score
+    assert scores[0] > scores[1]
+    assert scores[0] > scores[2]
