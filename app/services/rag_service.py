@@ -484,13 +484,38 @@ class RAGService:
             rrf_scores[cid] = rrf_scores.get(cid, 0.0) + (1.0 / (k_rrf + rank + 1))
 
         sorted_cids = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
-        final_results = []
-        for cid, score in sorted_cids[:top_k]:
-            item = dict(chunk_map[cid])
-            item["rrf_score"] = round(score, 6)
-            if "similarity" not in item or item.get("similarity") is None:
-                item["similarity"] = round(score * 10, 4)
-            final_results.append(item)
+
+        if len(uuids) > 1:
+            # Group ranked candidates by document_id for balanced multi-document representation
+            doc_buckets: dict[str, list[dict[str, Any]]] = {str(u): [] for u in uuids}
+            for cid, score in sorted_cids:
+                item = dict(chunk_map[cid])
+                item["rrf_score"] = round(score, 6)
+                if "similarity" not in item or item.get("similarity") is None:
+                    item["similarity"] = round(score * 10, 4)
+                d_id = str(item.get("document_id", ""))
+                if d_id in doc_buckets:
+                    doc_buckets[d_id].append(item)
+                else:
+                    doc_buckets.setdefault(d_id, []).append(item)
+
+            # Round-robin selection across all documents
+            final_results = []
+            max_depth = max((len(b) for b in doc_buckets.values()), default=0)
+            for depth in range(max_depth):
+                for d_id, bucket in doc_buckets.items():
+                    if depth < len(bucket) and len(final_results) < top_k:
+                        final_results.append(bucket[depth])
+                if len(final_results) >= top_k:
+                    break
+        else:
+            final_results = []
+            for cid, score in sorted_cids[:top_k]:
+                item = dict(chunk_map[cid])
+                item["rrf_score"] = round(score, 6)
+                if "similarity" not in item or item.get("similarity") is None:
+                    item["similarity"] = round(score * 10, 4)
+                final_results.append(item)
 
         return final_results
 

@@ -130,7 +130,8 @@ async def chat_stream(
         doc_ids = [d.strip() for d in document_ids.split(",") if d.strip()]
         if doc_ids:
             try:
-                matched = await rag_service.search_documents(prompt, doc_ids, top_k=4, db=rag_db)
+                k = max(6, len(doc_ids) * 3) if len(doc_ids) > 1 else 4
+                matched = await rag_service.search_documents(prompt, doc_ids, top_k=k, db=rag_db)
                 if matched:
                     context_block = "\n\n".join(
                         f"[Document: {c['filename']} (chunk {c['chunk_index']})]:\n{c['chunk_text']}"
