@@ -80,6 +80,10 @@ class ChatService:
                 role=message.role,
                 content=message.content,
                 message_id=message.message_id,
+                model=message.model,
+                tokens=message.tokens or 0,
+                routed_to=message.routed_to,
+                complexity_score=message.complexity_score,
             )
             self.session.add(db_message)
         await self.session.commit()
@@ -99,6 +103,10 @@ class ChatService:
                 content=message.content,
                 timestamp=message.created_at.isoformat(),
                 message_id=message.message_id,
+                model=message.model,
+                tokens=message.tokens or 0,
+                routed_to=message.routed_to,
+                complexity_score=message.complexity_score,
             )
             for message in result.messages
         ]

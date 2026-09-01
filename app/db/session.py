@@ -1,8 +1,7 @@
 import logging
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.core.settings import app_settings
 from app.db.models import Base, ChatMessage, ChatThread, Feedback
@@ -23,16 +22,13 @@ elif database_url.startswith("postgresql://"):
 engine_kwargs = {"echo": app_settings.database_settings.ECHO, "future": True}
 
 if "sqlite" in database_url:
-    # SQLite connection args
     engine_kwargs["connect_args"] = {"check_same_thread": False}
-    # Persistence for in-memory sqlite between connections
-    if ":memory:" in database_url:
-        engine_kwargs["poolclass"] = StaticPool
 else:
-    # Connection pool options for production databases (e.g. Postgres)
+    # Connection pool options for production databases (e.g. Postgres / Cloud SQL)
     engine_kwargs["pool_size"] = app_settings.database_settings.POOL_SIZE
     engine_kwargs["max_overflow"] = app_settings.database_settings.MAX_OVERFLOW
     engine_kwargs["pool_pre_ping"] = app_settings.database_settings.POOL_PRE_PING
+    engine_kwargs["pool_timeout"] = 10
 
 engine = create_async_engine(database_url, **engine_kwargs)
 
@@ -96,7 +92,14 @@ async def seed_db():
 
 
 async def init_db():
-    """Create all database tables and run seeds."""
+    """Create all database tables, ensure schema migrations, and run seeds."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        try:
+            await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS model VARCHAR(64);"))
+            await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS tokens INTEGER DEFAULT 0;"))
+            await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS routed_to VARCHAR(32);"))
+            await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS complexity_score DOUBLE PRECISION;"))
+        except Exception as e:
+            logger.debug("Column migration skipped: %s", e)
     await seed_db()

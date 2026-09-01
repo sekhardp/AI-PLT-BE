@@ -103,12 +103,52 @@ async def test_non_admin_chat_stream_and_history(client: AsyncClient):
     messages = hist_resp.json()["messages"]
     assert len(messages) >= 2
     assert messages[0]["content"] == "Hello"
+    assert messages[0].get("tokens") is not None
+    # Assistant message should have model and tokens populated
+    assert messages[1]["role"] == "assistant"
+    assert messages[1].get("model") is not None
+    assert messages[1].get("tokens") is not None
+    assert messages[1]["tokens"] >= 0
 
     # 3. List sessions for non-admin user
     list_resp = await client.get("/api/v1/history?user_id=sarath@example.com")
     assert list_resp.status_code == 200
     sessions = list_resp.json()["sessions"]
     assert any(s["session_id"] == "sess-nonadmin-1" for s in sessions)
+
+
+@pytest.mark.asyncio
+async def test_message_model_and_tokens_persistence(client: AsyncClient):
+    """Verify that chat responses store model, tokens, routed_to, and complexity in DB."""
+    # Send a non-streaming chat request
+    req_body = {
+        "prompt": "What is 2 + 2?",
+        "session_id": "sess-token-test-1",
+        "user_id": "sarath@example.com"
+    }
+    resp = await client.post("/api/v1/chat", json=req_body)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "message" in data
+    msg = data["message"]
+    assert msg["model"] is not None
+    assert msg["tokens"] is not None
+    assert msg["tokens"] >= 0
+    assert msg["routed_to"] is not None
+
+    # Fetch history and verify it is retrieved from database
+    hist_resp = await client.get("/api/v1/history/sess-token-test-1?user_id=sarath@example.com")
+    assert hist_resp.status_code == 200
+    hist_msgs = hist_resp.json()["messages"]
+    assert len(hist_msgs) == 2
+    # User message
+    assert hist_msgs[0]["role"] == "user"
+    assert hist_msgs[0]["tokens"] >= 0
+    # Assistant message
+    assert hist_msgs[1]["role"] == "assistant"
+    assert hist_msgs[1]["model"] == msg["model"]
+    assert hist_msgs[1]["tokens"] == msg["tokens"]
+    assert hist_msgs[1]["routed_to"] == msg["routed_to"]
 
 
 def test_recursive_chunk_text():

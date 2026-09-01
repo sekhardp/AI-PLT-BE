@@ -22,6 +22,7 @@ else:
     rag_engine_kwargs["pool_pre_ping"] = True
     rag_engine_kwargs["pool_size"] = 5
     rag_engine_kwargs["max_overflow"] = 10
+    rag_engine_kwargs["pool_timeout"] = 10
 
 rag_engine = create_async_engine(rag_db_url, **rag_engine_kwargs)
 

@@ -103,7 +103,7 @@ class UserService:
 
     async def update_credits(self, email: str, new_credits: int, db: AsyncSession) -> User:
         """Admin top-up or manual credit update."""
-        user = await self.get_user_by_email(email, db)
+        user = await self.resolve_user(email, db)
         if not user:
             raise ValueError(f"User '{email}' not found")
 
@@ -135,7 +135,7 @@ class UserService:
         if not db:
             return None
 
-        user = await self.get_user_by_email(email, db)
+        user = await self.resolve_user(email, db)
         if not user:
             return None
 
@@ -159,7 +159,7 @@ class UserService:
 
     async def get_transactions(self, email: str, db: AsyncSession) -> List[CreditTransaction]:
         """Get credit ledger history for user."""
-        user = await self.get_user_by_email(email, db)
+        user = await self.resolve_user(email, db)
         if not user:
             return []
 

@@ -6,6 +6,10 @@ class ChatMessage(BaseModel):
     content: str
     timestamp: str
     message_id: str | None = None
+    model: str | None = None
+    tokens: int | None = None
+    routed_to: str | None = None
+    complexity_score: float | None = None
 
 
 class ChatRequest(BaseModel):

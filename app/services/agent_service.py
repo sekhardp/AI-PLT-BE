@@ -26,7 +26,7 @@ class AgentService:
         agent_id: str | None,
         prompt: str,
         chat_history: list[dict[str, str]] | None = None,
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Run non-streaming execution against downstream agent."""
         return await self.client.execute_non_streaming(agent_id, prompt, chat_history=chat_history)
 

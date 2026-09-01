@@ -58,7 +58,7 @@ class AgentClient:
         agent_id: str | None,
         prompt: str,
         chat_history: list[dict[str, str]] | None = None,
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Execute a non-streaming prompt against the agent service."""
         url = f"{self.base_url}/execute"
         payload = {
@@ -72,8 +72,7 @@ class AgentClient:
             try:
                 response = await client.post(url, json=payload)
                 response.raise_for_status()
-                res_data = response.json()
-                return res_data.get("content", "")
+                return response.json()
             except httpx.HTTPError as e:
                 logger.error("Agent execution failed (non-streaming): %s", e)
                 raise AgentClientError(f"Error from agent service: {e}") from e

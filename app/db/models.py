@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -37,6 +37,10 @@ class ChatMessage(Base):
     )
     role = Column(String(32), nullable=False)
     content = Column(Text, nullable=False)
+    model = Column(String(64), nullable=True)
+    tokens = Column(Integer, default=0, nullable=True)
+    routed_to = Column(String(32), nullable=True)
+    complexity_score = Column(Float, nullable=True)
     created_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
