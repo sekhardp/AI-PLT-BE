@@ -1,9 +1,12 @@
 # =============================================================================
 # Stage 1: Build — install dependencies with uv
 # =============================================================================
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
+
+# Install uv directly via pip to avoid external ghcr.io registry timeouts in Cloud Build
+RUN pip install --no-cache-dir uv
 
 # Enable bytecode compilation
 ENV UV_COMPILE_BYTECODE=1
