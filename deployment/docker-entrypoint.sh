@@ -23,12 +23,10 @@ echo " Environment : ${APP_ENV:-development}"
 echo " Database URL: ${DB_URL:-sqlite:///./app.db}"
 echo " Upload dir  : ${UPLOAD_DIR}"
 echo " Port        : ${PORT}"
-echo "Applying database migrations (Alembic)..."
-alembic upgrade head || echo "WARNING: Alembic migration encountered an issue or was already applied."
+echo "========================================="
 
-# Execute Uvicorn replacing shell process (PID 1)
+# Execute Uvicorn replacing shell process (PID 1) immediately for fast Cloud Run health probe response
 exec uvicorn app.main:app \
-
     --host "${ENDPOINT_HOST:-0.0.0.0}" \
     --port "${PORT}" \
     --log-level "${LOG_LEVEL:-info}" \

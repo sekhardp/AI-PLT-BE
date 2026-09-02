@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -23,16 +24,24 @@ def configure_logging() -> None:
 async def lifespan(app: FastAPI):
     """
     Handle startup and shutdown lifecycles of the application.
+    Initializes database in background to avoid blocking Cloud Run port binding.
     """
-    logger.info("Starting up and running migrations/seeding...")
-    try:
-        await init_db()
-        logger.info("Database initialized successfully.")
-    except Exception as e:
-        logger.exception("Failed to initialize database: %s", e)
+    async def _async_init_db():
+        logger.info("Initializing database schema and seed data in background...")
+        try:
+            await init_db()
+            logger.info("Database initialized successfully.")
+        except Exception as e:
+            logger.warning("Database initialization deferred/encountered error: %s", e)
+
+    # Schedule non-blocking startup task
+    db_task = asyncio.create_task(_async_init_db())
 
     yield
 
+    # Cancel task if still running on shutdown
+    if not db_task.done():
+        db_task.cancel()
     logger.info("Shutting down the application...")
 
 
