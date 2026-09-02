@@ -152,21 +152,6 @@ class LlmSettings(BaseSettings):
     EMBEDDING_MODEL: str = Field("text-embedding-3-small", description="Embedding model")
 
 
-class UploadSettings(BaseSettings):
-    """
-    File upload settings.
-    """
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_ignore_empty=True,
-        env_prefix="UPLOAD_",
-        extra="ignore")
-
-    DIR: str = Field("./data/uploads", description="File upload directory")
-    MAX_SIZE_MB: int = Field(50, description="Maximum file upload size in MB")
-
-
 class AppSettings(BaseSettings):
     """
     Application settings for the FastAPI application.
@@ -217,11 +202,6 @@ class AppSettings(BaseSettings):
     llm_settings: LlmSettings = LlmSettings(
         default_factory=LlmSettings,
         description="LLM settings for the application"
-    )
-
-    upload_settings: UploadSettings = UploadSettings(
-        default_factory=UploadSettings,
-        description="Upload settings for the application"
     )
 
 

@@ -17,7 +17,9 @@ app_settings.agent_settings.SERVICE_URL = "http://mock-agent-service"
 
 from app.core.bootstrap import create_app
 from app.db.models import Base
+import app.db.rag_models  # noqa: F401
 from app.db.session import get_db_session
+from app.db.rag_session import get_rag_db
 
 # Create test engine and session factory
 test_engine = create_async_engine(
@@ -65,6 +67,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
         yield db_session
 
     app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_rag_db] = override_get_db_session
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

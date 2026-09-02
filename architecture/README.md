@@ -10,4 +10,6 @@ This directory contains architectural and database entity-relationship (ER) diag
    * Sequence diagram of JWT authentication, validation, token expiration, and upstream delegation.
 3. **[mcp_rbac_flow_diagram.md](./mcp_rbac_flow_diagram.md)**
    * Flowchart detailing the two-gate MCP tool filtering and runtime execution firewall.
+4. **[rag_mcp_architecture.md](./rag_mcp_architecture.md)**
+   * Architectural design, data vs tool plane separation, and tool schemas for the Pure RAG MCP Server.
       

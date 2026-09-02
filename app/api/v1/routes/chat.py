@@ -10,11 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.schemas.chat import ChatMessage, ChatRequest, ChatResponse
 from app.clients.agent_client import AgentClientError
-from app.db.rag_session import get_rag_db
 from app.services.agent_service import AgentService, get_agent_service
 from app.services.chat_service import ChatService, get_chat_service
 from app.services.llm_service import LLMService, get_llm_service
-from app.services.rag_service import rag_service
 from app.services.user_service import user_service
 
 logger = logging.getLogger(__name__)
@@ -108,7 +106,6 @@ async def chat_stream(
     agent_service: AgentService = Depends(get_agent_service),
     chat_service: ChatService = Depends(get_chat_service),
     llm_service: LLMService = Depends(get_llm_service),
-    rag_db: AsyncSession = Depends(get_rag_db),
 ):
     """Stream chat response tokens using Server-Sent Events (SSE) with exact model token persistence."""
     sid = session_id or str(uuid.uuid4())
@@ -125,28 +122,12 @@ async def chat_stream(
         past_messages = await chat_service.get_messages(sid, user_id=user_id if user_id else None)
         chat_history = [{"role": m.role, "content": m.content} for m in past_messages[-6:]]
 
-        # 2. Retrieve document context if attached
+        # 2. Forward prompt with context continuity
         effective_prompt = prompt
         doc_ids = [d.strip() for d in document_ids.split(",") if d.strip()]
         if doc_ids:
-            try:
-                k = max(6, len(doc_ids) * 3) if len(doc_ids) > 1 else 4
-                matched = await rag_service.search_documents(prompt, doc_ids, top_k=k, db=rag_db)
-                if matched:
-                    context_block = "\n\n".join(
-                        f"[Document: {c['filename']} (chunk {c['chunk_index']})]:\n{c['chunk_text']}"
-                        for c in matched
-                    )
-                    effective_prompt = (
-                        f"Relevant context from attached documents:\n"
-                        f"==============================\n"
-                        f"{context_block}\n"
-                        f"==============================\n\n"
-                        f"User Question: {prompt}\n\n"
-                        f"Answer the user question using the context above when relevant."
-                    )
-            except Exception as rag_err:
-                logger.warning("RAG context search failed: %s", rag_err)
+            # Append document hint for the agent so it knows which document IDs to query via search_knowledge_base
+            effective_prompt = f"{prompt}\n\n[Attached Document IDs: {', '.join(doc_ids)}]"
 
         # 3. Stream from downstream agent service
         try:

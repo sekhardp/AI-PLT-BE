@@ -22,10 +22,10 @@ MAX_DOCS_PER_USER = 5
 MAX_STORAGE_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
-class RAGService:
+class DocumentService:
     """
-    RAG service managing document parsing, chunking, Vertex AI embeddings,
-    user storage quotas, and pgvector cosine similarity search.
+    Document service managing parsing (PDF/DOCX/TXT), semantic chunking,
+    Vertex AI vectorization (embeddings), user storage quotas, and persistence.
     """
 
     def __init__(self):
@@ -520,4 +520,4 @@ class RAGService:
         return final_results
 
 
-rag_service = RAGService()
+document_service = DocumentService()

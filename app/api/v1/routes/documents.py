@@ -5,11 +5,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.rag_session import get_rag_db
-from app.services.rag_service import rag_service
+from app.services.document_service import document_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/documents", tags=["Documents & RAG"])
+router = APIRouter(prefix="/documents", tags=["Documents & Knowledge"])
 
 
 class SearchRequest(BaseModel):
@@ -36,7 +36,7 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     try:
-        doc = await rag_service.ingest_document(
+        doc = await document_service.ingest_document(
             user_id=user_id,
             filename=file.filename,
             content=content,
@@ -66,7 +66,7 @@ async def list_documents(
 ):
     """Retrieve all uploaded documents and current storage quota for the user."""
     try:
-        return await rag_service.list_documents(user_id=user_id, db=db)
+        return await document_service.list_documents(user_id=user_id, db=db)
     except Exception as e:
         logger.error("Failed to list documents: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -80,7 +80,7 @@ async def delete_document(
 ):
     """Delete a document and all of its vector embeddings."""
     try:
-        deleted = await rag_service.delete_document(doc_id=document_id, user_id=user_id, db=db)
+        deleted = await document_service.delete_document(doc_id=document_id, user_id=user_id, db=db)
         if not deleted:
             raise HTTPException(status_code=404, detail="Document not found")
         return {"status": "ok", "deleted_id": document_id}
@@ -98,7 +98,7 @@ async def search_documents(
 ):
     """Execute vector similarity search across specified document IDs."""
     try:
-        results = await rag_service.search_documents(
+        results = await document_service.search_documents(
             query=req.query,
             document_ids=req.document_ids,
             top_k=req.top_k,

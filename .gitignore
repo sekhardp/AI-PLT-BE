@@ -221,3 +221,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local data & uploads
+data/uploads/*
+!data/uploads/.gitkeep
+*.db
+*.db-journal

@@ -75,16 +75,15 @@ async def test_feedback_flow(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_upload_endpoint(client: AsyncClient):
-    """Test file upload validation and storage."""
-    files = {"file": ("test.txt", b"Hello, this is a test file content.", "text/plain")}
-    resp = await client.post("/api/v1/upload", files=files)
+async def test_documents_list_endpoint(client: AsyncClient):
+    """Test listing documents and quota structure."""
+    resp = await client.get("/api/v1/documents?user_id=test_user")
     assert resp.status_code == 200
     data = resp.json()
-    assert "file_id" in data
-    assert data["filename"] == "test.txt"
-    assert data["size_bytes"] == len(b"Hello, this is a test file content.")
-    assert data["content_type"] == "text/plain"
+    assert "documents" in data
+    assert "quota" in data
+    assert data["quota"]["max_documents"] == 5
+    assert data["quota"]["max_mb"] == 100.0
 
 
 @pytest.mark.asyncio
@@ -153,18 +152,18 @@ async def test_message_model_and_tokens_persistence(client: AsyncClient):
 
 def test_recursive_chunk_text():
     """Verify recursive character text splitter splits hierarchically and respects boundaries."""
-    from app.services.rag_service import rag_service
+    from app.services.document_service import document_service
 
     sample_doc = (
         "Introduction to AI Platform.\n\n"
         "Section 1: Architecture Overview.\n"
         "The system routes complex queries to frontier models and fast queries to local models. "
-        "It includes a RAG pipeline with pgvector semantic similarity search.\n\n"
+        "It includes a vectorization pipeline with pgvector semantic similarity search.\n\n"
         "Section 2: Security & Quotas.\n"
         "Users have isolated storage quotas and credit ledgers."
     )
 
-    chunks = rag_service.chunk_text(sample_doc, chunk_size=120, overlap=30)
+    chunks = document_service.chunk_text(sample_doc, chunk_size=120, overlap=30)
     assert len(chunks) >= 2
     # Ensure all chunks are within reasonable chunk_size bounds
     for c in chunks:
@@ -177,7 +176,7 @@ def test_recursive_chunk_text():
 
 def test_bm25_tokenization_and_hybrid():
     """Verify BM25 tokenization and BM25Okapi scoring."""
-    from app.services.rag_service import rag_service
+    from app.services.document_service import document_service
     from rank_bm25 import BM25Okapi
 
     corpus = [
@@ -185,11 +184,11 @@ def test_bm25_tokenization_and_hybrid():
         "Scope 1 emissions are direct greenhouse gas emissions from controlled facilities.",
         "Scope 2 emissions are indirect emissions from electricity consumption.",
     ]
-    tokenized_corpus = [rag_service._tokenize_text(doc) for doc in corpus]
+    tokenized_corpus = [document_service._tokenize_text(doc) for doc in corpus]
     bm25 = BM25Okapi(tokenized_corpus)
 
     query = "PR-9021 invoice"
-    query_tokens = rag_service._tokenize_text(query)
+    query_tokens = document_service._tokenize_text(query)
     scores = bm25.get_scores(query_tokens)
 
     # Document 0 (PR-9021 invoice) should have highest score
