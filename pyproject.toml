@@ -22,5 +22,5 @@ dependencies = [
     "python-docx>=1.2.0",
     "pgvector>=0.5.0",
     "google-genai>=1.2.0",
-    "rank-bm25>=0.2.2",
 ]
+

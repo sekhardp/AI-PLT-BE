@@ -100,6 +100,13 @@ async def init_db():
             await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS tokens INTEGER DEFAULT 0;"))
             await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS routed_to VARCHAR(32);"))
             await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS complexity_score DOUBLE PRECISION;"))
+            
+            if "postgresql" in database_url or "postgres" in database_url:
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding_hnsw ON document_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);"))
+                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_created ON chat_messages(thread_id, created_at ASC);"))
+                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_chat_threads_user_created ON chat_threads(user_id, created_at DESC);"))
+                await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_credit_transactions_user_created ON credit_transactions(user_id, created_at DESC);"))
         except Exception as e:
-            logger.debug("Column migration skipped: %s", e)
+            logger.debug("Schema migration/index creation skipped: %s", e)
     await seed_db()

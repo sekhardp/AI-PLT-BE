@@ -22,11 +22,11 @@ flowchart TD
 
     subgraph DB [("Cloud SQL / PostgreSQL with pgvector")]
         DocsTable[("user_documents")]
-        ChunksTable[("document_chunks (vectors + BM25)")]
+        ChunksTable[("document_chunks (pgvector HNSW)")]
     end
 
     subgraph MCP_Layer ["RAG MCP Server (AI-PLT-MCP-SERVERS)"]
-        Tool1["search_knowledge_base(query, user_id, doc_ids, top_k, mode)"]
+        Tool1["search_knowledge_base(query, user_id, doc_ids, top_k)"]
         Tool2["list_user_documents(user_id)"]
         Tool3["get_document_snippet(chunk_id, user_id)"]
         Prompt1["Prompt: rag_research_workflow"]
@@ -49,7 +49,7 @@ flowchart TD
     ChatRoute -->|4. Forward User Request + Context Meta| Agent
     SkillFile -.->|5. Workflow SOP Injection| Agent
     Agent -->|6. Autonomous MCP Tool Call| Tool1
-    Tool1 -->|7. Read-Only Hybrid Query| ChunksTable
+    Tool1 -->|7. Read-Only Vector Query| ChunksTable
     Tool1 -->>|8. Ranked Relevant Chunks| Agent
     Agent -->>|9. Stream Grounded Response with Citations| ChatRoute
     ChatRoute -->>|10. SSE Stream| UI
@@ -62,7 +62,7 @@ flowchart TD
 | Area | Component | Responsibility |
 | :--- | :--- | :--- |
 | **Ingestion Plane** | `AI-PLT-BE` | File multipart upload, PDF/DOCX text extraction, recursive semantic chunking, Vertex AI batch embedding generation, storage quota validation (5 docs / 100MB), and PostgreSQL writes. |
-| **Tool & Query Plane** | `rag-server` (MCP) | Read-only hybrid vector + BM25 search, Reciprocal Rank Fusion (RRF), chunk retrieval, document discovery, and tenant isolation filtering. |
+| **Tool & Query Plane** | `rag-server` (MCP) | Read-only pgvector similarity search, chunk retrieval, document discovery, and tenant isolation filtering. |
 | **Execution Plane** | Agent / GCP Gateway | Reasoning loop, transforming conversational questions into targeted search terms, invoking MCP tools, and grounding answers with citations. |
 
 ---
@@ -84,7 +84,7 @@ flowchart LR
 
     subgraph Gate2 ["Gate 2: Runtime MCP Tenant Firewall"]
         Call --> Firewall{"Verify user_id owns doc_ids"}
-        Firewall -->|Valid| DB[("Execute pgvector Hybrid Search")]
+        Firewall -->|Valid| DB[("Execute pgvector HNSW Search")]
         Firewall -->|Tampered / Unauthorized| Deny["Return 403 / Empty Results"]
     end
 
@@ -96,13 +96,12 @@ flowchart LR
 ## 4. MCP Tool Definitions
 
 ### `search_knowledge_base`
-* **Purpose:** Performs pgvector cosine distance + BM25 lexical search with Reciprocal Rank Fusion.
+* **Purpose:** Performs fast HNSW-indexed pgvector cosine distance search.
 * **Arguments:**
   * `query` (str): Search keywords / phrase.
   * `user_id` (str): User identifier for multi-tenant isolation.
   * `document_ids` (list[str], optional): Document UUIDs to restrict the search.
   * `top_k` (int, default=5): Number of top chunks to return.
-  * `mode` (str, default='hybrid'): `'hybrid'`, `'vector'`, or `'bm25'`.
 
 ### `list_user_documents`
 * **Purpose:** Returns list of all indexed documents in `ready` state for the user.

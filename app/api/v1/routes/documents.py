@@ -1,7 +1,5 @@
 import logging
-from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.rag_session import get_rag_db
@@ -9,13 +7,8 @@ from app.services.document_service import document_service
 
 logger = logging.getLogger(__name__)
 
+
 router = APIRouter(prefix="/documents", tags=["Documents & Knowledge"])
-
-
-class SearchRequest(BaseModel):
-    query: str = Field(..., description="Search query")
-    document_ids: List[str] = Field(..., description="List of document IDs to search across")
-    top_k: int = Field(5, description="Number of top chunks to retrieve")
 
 
 @router.post("/upload")
@@ -90,21 +83,3 @@ async def delete_document(
         logger.error("Failed to delete document: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@router.post("/search")
-async def search_documents(
-    req: SearchRequest,
-    db: AsyncSession = Depends(get_rag_db),
-):
-    """Execute vector similarity search across specified document IDs."""
-    try:
-        results = await document_service.search_documents(
-            query=req.query,
-            document_ids=req.document_ids,
-            top_k=req.top_k,
-            db=db,
-        )
-        return {"query": req.query, "results": results}
-    except Exception as e:
-        logger.error("Document search error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))

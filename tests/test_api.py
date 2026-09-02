@@ -174,23 +174,12 @@ def test_recursive_chunk_text():
     assert any("Section 2: Security & Quotas" in c for c in chunks)
 
 
-def test_bm25_tokenization_and_hybrid():
-    """Verify BM25 tokenization and BM25Okapi scoring."""
+def test_extract_text_plain_and_markdown():
+    """Verify text extraction handles plain text and fallback."""
     from app.services.document_service import document_service
-    from rank_bm25 import BM25Okapi
 
-    corpus = [
-        "Invoice PR-9021 for carbon credit retirement certificate issued to Acme Corp.",
-        "Scope 1 emissions are direct greenhouse gas emissions from controlled facilities.",
-        "Scope 2 emissions are indirect emissions from electricity consumption.",
-    ]
-    tokenized_corpus = [document_service._tokenize_text(doc) for doc in corpus]
-    bm25 = BM25Okapi(tokenized_corpus)
+    raw_bytes = b"# Sample Header\n\nThis is sample markdown text."
+    extracted = document_service.extract_text("sample.md", raw_bytes, "text/markdown")
+    assert "Sample Header" in extracted
+    assert "sample markdown text" in extracted
 
-    query = "PR-9021 invoice"
-    query_tokens = document_service._tokenize_text(query)
-    scores = bm25.get_scores(query_tokens)
-
-    # Document 0 (PR-9021 invoice) should have highest score
-    assert scores[0] > scores[1]
-    assert scores[0] > scores[2]
