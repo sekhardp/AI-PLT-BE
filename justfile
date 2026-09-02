@@ -19,8 +19,14 @@ clean:
     find . -type d -name "__pycache__" -prune -exec rm -rf {} +
     find . -type f -name "*.pyc" -delete
 
-# Use: just test
-# Equivalent: uv run pytest
-
 test:
-    PYTHONPATH=. uv run pytest -q
+    PYTHONPATH=. uv run pytest -v
+
+migrate:
+    uv run alembic upgrade head
+
+rollback:
+    uv run alembic downgrade -1
+
+reset-db:
+    PYTHONPATH=. uv run python scripts/reset_db.py

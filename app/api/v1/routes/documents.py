@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.rag_session import get_rag_db
+from app.db.session import get_db_session
 from app.services.document_service import document_service
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/documents", tags=["Documents & Knowledge"])
 async def upload_document(
     file: UploadFile = File(...),
     user_id: str = Form("default_user"),
-    db: AsyncSession = Depends(get_rag_db),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """
     Upload and index a document into Cloud SQL pgvector.
@@ -55,7 +55,7 @@ async def upload_document(
 @router.get("")
 async def list_documents(
     user_id: str = "default_user",
-    db: AsyncSession = Depends(get_rag_db),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """Retrieve all uploaded documents and current storage quota for the user."""
     try:
@@ -69,7 +69,7 @@ async def list_documents(
 async def delete_document(
     document_id: str,
     user_id: str = "default_user",
-    db: AsyncSession = Depends(get_rag_db),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """Delete a document and all of its vector embeddings."""
     try:

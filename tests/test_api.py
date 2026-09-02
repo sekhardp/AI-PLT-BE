@@ -17,6 +17,37 @@ async def test_health_endpoints(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_user_login_credits_and_transactions_flow(client: AsyncClient):
+    """Test user registration, credit deduction, and ledger transaction tracking."""
+    # 1. Login/Register user
+    login_payload = {"email": "alex@example.com", "username": "Alex"}
+    resp = await client.post("/api/v1/users/login", json=login_payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    user_id = data["user"]["id"]
+    assert user_id is not None
+    assert isinstance(user_id, str)
+    assert data["user"]["credits"] == 20
+
+    # 2. Deduct credits
+    deduct_payload = {"amount": 2, "tokens": 150, "reason": "Test Deduct"}
+    deduct_resp = await client.post("/api/v1/users/alex@example.com/deduct", json=deduct_payload)
+    assert deduct_resp.status_code == 200
+    assert deduct_resp.json()["user"]["credits"] == 18
+    assert deduct_resp.json()["user"]["tokensUsed"] == 150
+
+    # 3. Retrieve transactions ledger
+    tx_resp = await client.get("/api/v1/users/alex@example.com/transactions")
+    assert tx_resp.status_code == 200
+    txs = tx_resp.json()["transactions"]
+    assert len(txs) >= 2  # Welcome grant + Test Deduct
+    assert txs[0]["amount"] == -2
+    assert txs[0]["tokensCharged"] == 150
+    assert txs[0]["balanceAfter"] == 18
+
+
+@pytest.mark.asyncio
 async def test_chat_and_history_flow(client: AsyncClient):
     """Test chat posting and verification in history."""
     # 1. Post a chat message
@@ -89,7 +120,7 @@ async def test_documents_list_endpoint(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_non_admin_chat_stream_and_history(client: AsyncClient):
     """Verify that non-admin users can stream responses without crash and fetch history."""
-    # 1. Non-admin stream chat (previously crashed due to missing or_ and hardcoded email)
+    # 1. Non-admin stream chat
     resp = await client.get("/api/v1/chat/stream?prompt=Hello&user_id=sarath@example.com&session_id=sess-nonadmin-1")
     assert resp.status_code == 200
     text = resp.text
@@ -119,7 +150,6 @@ async def test_non_admin_chat_stream_and_history(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_message_model_and_tokens_persistence(client: AsyncClient):
     """Verify that chat responses store model, tokens, routed_to, and complexity in DB."""
-    # Send a non-streaming chat request
     req_body = {
         "prompt": "What is 2 + 2?",
         "session_id": "sess-token-test-1",
@@ -140,10 +170,8 @@ async def test_message_model_and_tokens_persistence(client: AsyncClient):
     assert hist_resp.status_code == 200
     hist_msgs = hist_resp.json()["messages"]
     assert len(hist_msgs) == 2
-    # User message
     assert hist_msgs[0]["role"] == "user"
     assert hist_msgs[0]["tokens"] >= 0
-    # Assistant message
     assert hist_msgs[1]["role"] == "assistant"
     assert hist_msgs[1]["model"] == msg["model"]
     assert hist_msgs[1]["tokens"] == msg["tokens"]
@@ -165,11 +193,9 @@ def test_recursive_chunk_text():
 
     chunks = document_service.chunk_text(sample_doc, chunk_size=120, overlap=30)
     assert len(chunks) >= 2
-    # Ensure all chunks are within reasonable chunk_size bounds
     for c in chunks:
         assert len(c) > 0
         assert isinstance(c, str)
-    # Ensure full content coverage
     assert any("Introduction to AI Platform" in c for c in chunks)
     assert any("Section 2: Security & Quotas" in c for c in chunks)
 
@@ -182,4 +208,3 @@ def test_extract_text_plain_and_markdown():
     extracted = document_service.extract_text("sample.md", raw_bytes, "text/markdown")
     assert "Sample Header" in extracted
     assert "sample markdown text" in extracted
-

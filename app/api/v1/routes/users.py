@@ -40,7 +40,7 @@ async def login_user(req: LoginRequest, db: AsyncSession = Depends(get_db_sessio
         return {
             "status": "ok",
             "user": {
-                "id": user.id,
+                "id": str(user.id),
                 "username": user.username,
                 "email": user.email,
                 "role": user.role,
@@ -60,7 +60,7 @@ async def list_all_users(db: AsyncSession = Depends(get_db_session)):
     return {
         "users": [
             {
-                "id": u.id,
+                "id": str(u.id),
                 "username": u.username,
                 "email": u.email,
                 "role": u.role,
@@ -81,7 +81,7 @@ async def get_user_profile(email: str, db: AsyncSession = Depends(get_db_session
         raise HTTPException(status_code=404, detail="User not found")
     return {
         "user": {
-            "id": user.id,
+            "id": str(user.id),
             "username": user.username,
             "email": user.email,
             "role": user.role,
@@ -103,6 +103,7 @@ async def update_user_credits(
         return {
             "status": "ok",
             "user": {
+                "id": str(user.id),
                 "email": user.email,
                 "credits": user.credits,
                 "tokensUsed": user.tokens_used,
@@ -134,6 +135,7 @@ async def deduct_user_credits(
     return {
         "status": "ok",
         "user": {
+            "id": str(user.id),
             "email": user.email,
             "credits": user.credits,
             "tokensUsed": user.tokens_used,
@@ -152,6 +154,7 @@ async def get_user_transactions(email: str, db: AsyncSession = Depends(get_db_se
                 "amount": t.amount,
                 "tokensCharged": t.tokens_charged,
                 "balanceAfter": t.balance_after,
+                "actionType": t.action_type,
                 "reason": t.reason,
                 "createdAt": t.created_at.isoformat() if t.created_at else None,
             }

@@ -6,11 +6,11 @@ from typing import Any, List, Optional
 from google import genai
 from pypdf import PdfReader
 import docx
-from sqlalchemy import delete, func, select, or_
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import app_settings
-from app.db.rag_models import DocumentChunk, UserDocument
+from app.db.models import DocumentChunk, UserDocument
 from app.services.user_service import user_service
 
 logger = logging.getLogger(__name__)
@@ -46,32 +46,19 @@ class DocumentService:
                 return None
         return self._genai_client
 
-    async def _resolve_user_identifiers(self, user_id: str | None, db: AsyncSession) -> tuple[bool, List[str]]:
-        """Resolve admin status and list of user identifiers for querying."""
-        if not user_id:
-            return False, []
-        is_admin = await user_service.is_admin_user(user_id, db)
-        if is_admin:
-            return True, []
-        user = await user_service.resolve_user(user_id, db)
-        identifiers = {str(user_id).strip()}
-        if user:
-            identifiers.add(str(user.id))
-            if user.email:
-                identifiers.add(user.email.lower().strip())
-        return False, list(identifiers)
-
     async def validate_quota(self, user_id: str, new_file_size: int, db: AsyncSession) -> None:
         """Enforce max 5 documents and max 100MB cumulative storage per user."""
-        is_admin, identifiers = await self._resolve_user_identifiers(user_id, db)
+        is_admin = await user_service.is_admin_user(user_id, db)
         if is_admin:
             return
 
-        cond = UserDocument.user_id.in_(identifiers) if identifiers else (UserDocument.user_id == user_id)
+        user = await user_service.resolve_user(user_id, db)
+        if not user:
+            return
 
         # 1. Check document count
         count = await db.scalar(
-            select(func.count(UserDocument.id)).where(cond)
+            select(func.count(UserDocument.id)).where(UserDocument.user_id == user.id)
         )
         if (count or 0) >= MAX_DOCS_PER_USER:
             raise ValueError(
@@ -80,7 +67,7 @@ class DocumentService:
 
         # 2. Check cumulative storage
         total_bytes = await db.scalar(
-            select(func.coalesce(func.sum(UserDocument.file_size_bytes), 0)).where(cond)
+            select(func.coalesce(func.sum(UserDocument.file_size_bytes), 0)).where(UserDocument.user_id == user.id)
         )
         total_bytes = total_bytes or 0
         if (total_bytes + new_file_size) > MAX_STORAGE_BYTES:
@@ -120,7 +107,6 @@ class DocumentService:
     ) -> List[str]:
         """
         Split raw text into overlapping semantic passages using a recursive character splitter.
-        Splits hierarchically by paragraphs, lines, sentences, and words to preserve context.
         """
         clean_text = text.strip()
         if not clean_text:
@@ -241,13 +227,14 @@ class DocumentService:
         file_size = len(content)
         await self.validate_quota(user_id, file_size, db)
 
-        # Resolve to canonical numeric user ID if user exists
+        # Resolve or create canonical user
         user = await user_service.resolve_user(user_id, db)
-        stored_user_id = str(user.id) if user else (str(user_id).strip() if user_id else "default_user")
+        if not user:
+            user = await user_service.get_or_create_user(email=user_id if "@" in user_id else f"{user_id}@example.com", db=db)
 
         # 1. Create document record with 'indexing' status
         doc = UserDocument(
-            user_id=stored_user_id,
+            user_id=user.id,
             filename=filename,
             file_size_bytes=file_size,
             mime_type=mime_type or "application/octet-stream",
@@ -270,10 +257,11 @@ class DocumentService:
             # 3. Generate embeddings
             vectors = await self.generate_embeddings(chunks)
 
-            # 4. Insert chunks into document_chunks
+            # 4. Insert chunks into document_chunks with denormalized user_id
             for idx, (chunk_text, vec) in enumerate(zip(chunks, vectors)):
                 chunk_record = DocumentChunk(
                     document_id=doc.id,
+                    user_id=user.id,
                     chunk_index=idx,
                     chunk_text=chunk_text,
                     token_count=len(chunk_text.split()),
@@ -281,6 +269,7 @@ class DocumentService:
                 )
                 db.add(chunk_record)
 
+            doc.chunk_count = len(chunks)
             doc.status = "ready"
             await db.commit()
             await db.refresh(doc)
@@ -295,9 +284,13 @@ class DocumentService:
     async def list_documents(self, user_id: str, db: AsyncSession) -> dict[str, Any]:
         """List user documents and compute quota metrics."""
         query = select(UserDocument).order_by(UserDocument.created_at.desc())
-        is_admin, identifiers = await self._resolve_user_identifiers(user_id, db)
-        if identifiers and not is_admin:
-            query = query.where(UserDocument.user_id.in_(identifiers))
+        
+        is_admin = await user_service.is_admin_user(user_id, db)
+        if not is_admin:
+            user = await user_service.resolve_user(user_id, db)
+            if user:
+                query = query.where(UserDocument.user_id == user.id)
+
         result = await db.scalars(query)
         docs = result.all()
 
@@ -311,6 +304,7 @@ class DocumentService:
                     "file_size_mb": round(d.file_size_bytes / (1024 * 1024), 2),
                     "mime_type": d.mime_type,
                     "status": d.status,
+                    "chunk_count": d.chunk_count,
                     "error_message": d.error_message,
                     "created_at": d.created_at.isoformat() if d.created_at else None,
                 }
@@ -328,11 +322,18 @@ class DocumentService:
 
     async def delete_document(self, doc_id: str, user_id: str, db: AsyncSession) -> bool:
         """Delete a document and cascade its vectorized chunks."""
-        doc_uuid = uuid.UUID(doc_id)
+        try:
+            doc_uuid = uuid.UUID(doc_id)
+        except ValueError:
+            return False
+
         query = select(UserDocument).where(UserDocument.id == doc_uuid)
-        is_admin, identifiers = await self._resolve_user_identifiers(user_id, db)
-        if identifiers and not is_admin:
-            query = query.where(UserDocument.user_id.in_(identifiers))
+        is_admin = await user_service.is_admin_user(user_id, db)
+        if not is_admin:
+            user = await user_service.resolve_user(user_id, db)
+            if user:
+                query = query.where(UserDocument.user_id == user.id)
+
         doc = await db.scalar(query)
         if not doc:
             return False
@@ -342,5 +343,5 @@ class DocumentService:
         await db.commit()
         return True
 
-document_service = DocumentService()
 
+document_service = DocumentService()

@@ -1,6 +1,7 @@
 import logging
+import uuid
 from typing import Any, List, Optional
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import CreditTransaction, User
@@ -50,17 +51,19 @@ class UserService:
             amount=initial_credits,
             tokens_charged=0,
             balance_after=initial_credits,
+            action_type="welcome_grant",
             reason="Welcome Credit Grant",
+            metadata_json={"role": assigned_role},
         )
         db.add(tx)
         await db.commit()
         await db.refresh(user)
-        logger.info("user_created_in_cloud_sql: %s, role=%s, credits=%s", norm_email, assigned_role, initial_credits)
+        logger.info("user_created: %s (id=%s), role=%s, credits=%s", norm_email, user.id, assigned_role, initial_credits)
         return user
 
     async def list_users(self, db: AsyncSession) -> List[User]:
         """List all users in the platform."""
-        result = await db.scalars(select(User).order_by(User.id.asc()))
+        result = await db.scalars(select(User).order_by(User.created_at.asc()))
         return list(result.all())
 
     async def get_user_by_email(self, email: str, db: AsyncSession) -> Optional[User]:
@@ -68,13 +71,17 @@ class UserService:
         norm_email = email.lower().strip()
         return await db.scalar(select(User).where(User.email == norm_email))
 
-    async def get_user_by_id(self, user_id: int, db: AsyncSession) -> Optional[User]:
-        """Fetch user by primary key ID."""
-        return await db.scalar(select(User).where(User.id == user_id))
+    async def get_user_by_id(self, user_id: uuid.UUID | str, db: AsyncSession) -> Optional[User]:
+        """Fetch user by primary key UUID."""
+        try:
+            uid = uuid.UUID(str(user_id).strip()) if isinstance(user_id, str) else user_id
+            return await db.scalar(select(User).where(User.id == uid))
+        except (ValueError, TypeError):
+            return None
 
     async def resolve_user(self, identifier: Any, db: AsyncSession) -> Optional[User]:
         """
-        Resolve a User object given either integer ID, string ID, or email address.
+        Resolve a User object given either UUID, UUID string, or email address.
         """
         if not identifier or not db:
             return None
@@ -82,15 +89,20 @@ class UserService:
         if not ident_str:
             return None
 
-        if ident_str.isdigit():
-            user = await self.get_user_by_id(int(ident_str), db)
+        # 1. Try resolving by UUID
+        try:
+            uid = uuid.UUID(ident_str)
+            user = await self.get_user_by_id(uid, db)
             if user:
                 return user
+        except ValueError:
+            pass
 
+        # 2. Try resolving by email
         return await self.get_user_by_email(ident_str, db)
 
     async def is_admin_user(self, identifier: Any, db: AsyncSession) -> bool:
-        """Check if an identifier (ID or email) corresponds to an admin user."""
+        """Check if an identifier (UUID or email) corresponds to an admin user."""
         if not identifier or not db:
             return False
         ident_str = str(identifier).strip().lower()
@@ -109,13 +121,16 @@ class UserService:
 
         diff = new_credits - user.credits
         user.credits = max(0, new_credits)
+        user.version += 1
 
         tx = CreditTransaction(
             user_id=user.id,
             amount=diff,
             tokens_charged=0,
             balance_after=user.credits,
+            action_type="admin_adjustment",
             reason="Admin Credit Adjustment",
+            metadata_json={"previous_balance": user.credits - diff, "new_balance": user.credits},
         )
         db.add(tx)
         await db.commit()
@@ -129,9 +144,11 @@ class UserService:
         amount: int = 1,
         tokens_used: int = 0,
         reason: str = "Chat Execution",
+        action_type: str = "chat_execution",
+        metadata: Optional[dict] = None,
         db: Optional[AsyncSession] = None,
     ) -> Optional[User]:
-        """Deduct credits on prompt completion and log tokens in Credit Bank ledger."""
+        """Deduct credits on prompt completion and log tokens in Credit Bank ledger atomically."""
         if not db:
             return None
 
@@ -139,18 +156,20 @@ class UserService:
         if not user:
             return None
 
-        # Admins have unlimited credits (credits do not decrement)
-        if user.role != "admin":
-            user.credits = max(0, user.credits - amount)
-
+        deduction = 0 if user.role == "admin" else amount
+        new_balance = max(0, user.credits - deduction)
+        user.credits = new_balance
         user.tokens_used += tokens_used
+        user.version += 1
 
         tx = CreditTransaction(
             user_id=user.id,
-            amount=-amount if user.role != "admin" else 0,
+            amount=-deduction,
             tokens_charged=tokens_used,
-            balance_after=user.credits,
+            balance_after=new_balance,
+            action_type=action_type,
             reason=reason,
+            metadata_json=metadata or {},
         )
         db.add(tx)
         await db.commit()
