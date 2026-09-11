@@ -58,14 +58,20 @@ class AgentClient:
         agent_id: str | None,
         prompt: str,
         chat_history: list[dict[str, str]] | None = None,
+        model: str | None = None,
+        session_id: str | None = None,
     ) -> Dict[str, Any]:
         """Execute a non-streaming prompt against the agent service."""
         url = f"{self.base_url}/execute"
-        payload = {
+        payload: dict[str, Any] = {
             "prompt": prompt,
             "agent_id": agent_id,
             "stream": False,
         }
+        if model:
+            payload["model"] = model
+        if session_id:
+            payload["session_id"] = session_id
         if chat_history:
             payload["chat_history"] = chat_history
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -82,14 +88,20 @@ class AgentClient:
         agent_id: str | None,
         prompt: str,
         chat_history: list[dict[str, str]] | None = None,
+        model: str | None = None,
+        session_id: str | None = None,
     ) -> AsyncGenerator[str, None]:
         """Execute a streaming prompt against the agent service, yielding SSE lines."""
         url = f"{self.base_url}/execute"
-        payload = {
+        payload: dict[str, Any] = {
             "prompt": prompt,
             "agent_id": agent_id,
             "stream": True,
         }
+        if model:
+            payload["model"] = model
+        if session_id:
+            payload["session_id"] = session_id
         if chat_history:
             payload["chat_history"] = chat_history
         try:
@@ -102,6 +114,19 @@ class AgentClient:
         except httpx.HTTPError as e:
             logger.error("Agent execution failed (streaming): %s", e)
             raise AgentClientError(f"Error from agent service streaming: {e}") from e
+
+    async def stop_execution(self, session_id: str) -> Dict[str, Any]:
+        """Cancel a running execution on the agent service."""
+        url = f"{self.base_url}/execute/stop"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.post(url, json={"session_id": session_id})
+                if response.status_code == 200:
+                    return response.json()
+                return {"status": "error", "session_id": session_id, "detail": response.text}
+            except Exception as e:
+                logger.warning("Failed to propagate stop request to agent service: %s", e)
+                return {"status": "unreachable", "session_id": session_id, "error": str(e)}
 
 
 def get_agent_client() -> AgentClient:

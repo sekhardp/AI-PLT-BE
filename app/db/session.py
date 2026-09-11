@@ -132,6 +132,40 @@ async def init_db():
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_chat_threads_user_created ON chat_threads(user_id, created_at DESC);"))
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_credit_transactions_user_created ON credit_transactions(user_id, created_at DESC);"))
                 await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_documents_user_created ON user_documents(user_id, created_at DESC);"))
+                
+                # Ensure all historical chat messages have model and tier attribution
+                await conn.execute(text("""
+                    UPDATE chat_messages m
+                    SET 
+                        model = COALESCE(sub.model, 'gemini-2.5-flash'),
+                        routed_to = COALESCE(sub.routed_to, 'frontier')
+                    FROM (
+                        SELECT DISTINCT ON (thread_id) thread_id, model, routed_to
+                        FROM chat_messages
+                        WHERE role = 'assistant' AND model IS NOT NULL
+                        ORDER BY thread_id, created_at DESC
+                    ) sub
+                    WHERE m.thread_id = sub.thread_id
+                      AND (m.model IS NULL OR m.routed_to IS NULL);
+                """))
+                await conn.execute(text("""
+                    UPDATE chat_messages
+                    SET model = 'gemini-2.5-flash', routed_to = 'frontier'
+                    WHERE model IS NULL;
+                """))
+                # Align user token usage counts with actual verified message token totals
+                await conn.execute(text("""
+                    UPDATE users u
+                    SET tokens_used = COALESCE(sub.total, 0)
+                    FROM (
+                        SELECT t.user_id, SUM(m.total_tokens) as total
+                        FROM chat_threads t
+                        JOIN chat_messages m ON m.thread_id = t.id
+                        WHERE t.user_id IS NOT NULL
+                        GROUP BY t.user_id
+                    ) sub
+                    WHERE u.id = sub.user_id;
+                """))
         except Exception as e:
-            logger.debug("Schema migration/index creation skipped: %s", e)
+            logger.debug("Schema migration/index creation/token sync skipped: %s", e)
     await seed_db()

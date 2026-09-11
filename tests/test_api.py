@@ -208,3 +208,27 @@ def test_extract_text_plain_and_markdown():
     extracted = document_service.extract_text("sample.md", raw_bytes, "text/markdown")
     assert "Sample Header" in extracted
     assert "sample markdown text" in extracted
+
+
+@pytest.mark.asyncio
+async def test_chat_token_stats_endpoint(client: AsyncClient):
+    """Verify aggregated token stats by model and tier."""
+    resp = await client.get("/api/v1/chat/token-stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total_tokens" in data
+    assert "total_queries" in data
+    assert "by_model" in data
+    assert "by_tier" in data
+    assert "local" in data["by_tier"]
+    assert "frontier" in data["by_tier"]
+
+
+@pytest.mark.asyncio
+async def test_chat_stop_endpoint(client: AsyncClient):
+    """Verify stop chat endpoint."""
+    resp = await client.post("/api/v1/chat/stop", json={"session_id": "test-session-stop-1"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "stopped"
+    assert data["session_id"] == "test-session-stop-1"

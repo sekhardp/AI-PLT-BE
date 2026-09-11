@@ -102,7 +102,7 @@ class CorsSettings(BaseSettings):
         extra="ignore")
 
     ALLOWED_ORIGINS: list[str] = Field(
-        ["http://localhost:5173", "http://localhost:3000",
+        ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000",
          "https://ai-plt-ui-24286129227.us-central1.run.app"],
         description="Allowed origins for CORS"
     )

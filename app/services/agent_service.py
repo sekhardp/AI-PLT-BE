@@ -26,19 +26,31 @@ class AgentService:
         agent_id: str | None,
         prompt: str,
         chat_history: list[dict[str, str]] | None = None,
+        model: str | None = None,
+        session_id: str | None = None,
     ) -> Dict[str, Any]:
         """Run non-streaming execution against downstream agent."""
-        return await self.client.execute_non_streaming(agent_id, prompt, chat_history=chat_history)
+        return await self.client.execute_non_streaming(
+            agent_id, prompt, chat_history=chat_history, model=model, session_id=session_id
+        )
 
     async def execute_agent_streaming(
         self,
         agent_id: str | None,
         prompt: str,
         chat_history: list[dict[str, str]] | None = None,
+        model: str | None = None,
+        session_id: str | None = None,
     ) -> AsyncGenerator[str, None]:
         """Run streaming execution against downstream agent."""
-        async for chunk in self.client.execute_streaming(agent_id, prompt, chat_history=chat_history):
+        async for chunk in self.client.execute_streaming(
+            agent_id, prompt, chat_history=chat_history, model=model, session_id=session_id
+        ):
             yield chunk
+
+    async def stop_agent(self, session_id: str) -> Dict[str, Any]:
+        """Request downstream agent service to stop running execution for session."""
+        return await self.client.stop_execution(session_id)
 
 
 def get_agent_service(client: AgentClient = Depends(get_agent_client)) -> AgentService:
