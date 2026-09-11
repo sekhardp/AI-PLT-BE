@@ -102,3 +102,52 @@ def test_export_pptx_from_base64_endpoint():
         == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
     assert len(response.content) == len(raw_bytes)
+
+
+def test_export_pptx_with_llm_variances_endpoint():
+    client = TestClient(app)
+    # Payload matching real LLM JSON output variations
+    llm_payload = {
+        "deck": {
+            "title": "Q3 Spend & Risk Briefing",
+            "theme": "dark",
+            "slides": [
+                {
+                    "title": "Procurement Highlights",
+                    "layout": "bullets",
+                    "bullet_points": ["Consolidated top 5 vendor contracts", "Reduced Maverick spend"]
+                },
+                {
+                    "title": "Executive KPIs",
+                    "layout": "kpi_grid",
+                    "kpis": [
+                        {"label": "Total Spend", "val": ".2M", "delta": "-5.2% YoY"},
+                        {"label": "Active Vendors", "val": "142", "trend": "down"}
+                    ]
+                },
+                {
+                    "title": "Regional Breakdown",
+                    "layout": "two_column",
+                    "left_column": {
+                        "title": "North America",
+                        "content": "Spend: .4M<br>Contracts: 85"
+                    },
+                    "right_column": {
+                        "title": "EMEA",
+                        "content": "Spend: .8M<br>Contracts: 57"
+                    }
+                }
+            ]
+        },
+        "filename": "q3_briefing"
+    }
+    response = client.post("/api/v1/presentation/export/pptx", json=llm_payload)
+    assert response.status_code == 200
+    assert (
+        response.headers["content-type"]
+        == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
+    assert "attachment; filename=" in response.headers["content-disposition"]
+
+    prs = Presentation(io.BytesIO(response.content))
+    assert len(prs.slides) >= 3
