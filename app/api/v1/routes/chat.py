@@ -291,7 +291,7 @@ async def chat_stream(
                         complexity_score = data.get("complexity_score", complexity_score)
                         model_usage = data.get("usage", model_usage)
 
-                        if data.get("type") in ("routing_init", "routing_decision"):
+                        if data.get("type") in ("routing_init", "routing_decision", "tool_start", "tool_done", "step_update"):
                             yield f"data: {json.dumps(data)}\n\n"
                             continue
 
