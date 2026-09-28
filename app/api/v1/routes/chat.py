@@ -97,7 +97,7 @@ async def get_model_token_stats(
         tier = "local" if is_local else "frontier"
 
         if "qwen" in raw_model.lower():
-            display_name = "Qwen 3 Coder 30B (Local LLM)"
+            display_name = "Qwen 2.5 7B (Local LLM)"
         elif "2.5-pro" in raw_model.lower():
             display_name = "Gemini 2.5 Pro (Frontier)"
         elif "2.5-flash" in raw_model.lower() or "gemini" in raw_model.lower():
