@@ -8,10 +8,10 @@ router = APIRouter()
 
 
 @router.get("", response_model=AgentListResponse)
-async def list_agents(service: AgentService = Depends(get_agent_service)):
+async def list_agents(sync: bool = False, service: AgentService = Depends(get_agent_service)):
     """List all available agents registered in downstream agent service."""
     try:
-        agents_data = await service.list_agents()
+        agents_data = await service.list_agents(sync=sync)
         agents = []
         for agent_data in agents_data:
             agents.append(

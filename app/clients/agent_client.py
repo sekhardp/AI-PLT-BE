@@ -22,9 +22,9 @@ class AgentClient:
         self.base_url = base_url or app_settings.agent_settings.SERVICE_URL
         self.timeout = timeout or float(app_settings.agent_settings.TIMEOUT_SECONDS)
 
-    async def list_agents(self) -> List[Dict[str, Any]]:
+    async def list_agents(self, sync: bool = False) -> List[Dict[str, Any]]:
         """Fetch list of agents from the agent service."""
-        url = f"{self.base_url}/agents"
+        url = f"{self.base_url}/agents?sync=true" if sync else f"{self.base_url}/agents"
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 response = await client.get(url)

@@ -13,9 +13,9 @@ class AgentService:
     def __init__(self, client: AgentClient):
         self.client = client
 
-    async def list_agents(self) -> List[Dict[str, Any]]:
+    async def list_agents(self, sync: bool = False) -> List[Dict[str, Any]]:
         """List all available agents from downstream agent service."""
-        return await self.client.list_agents()
+        return await self.client.list_agents(sync=sync)
 
     async def get_agent(self, agent_id: str) -> Dict[str, Any]:
         """Fetch details of a specific agent."""
